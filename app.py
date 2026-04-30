@@ -224,20 +224,45 @@ def compute_indicators(df):
 # ------------------------------------------------------------------
 # Main UI: Upload or Paste
 # ------------------------------------------------------------------
-uploaded_file = st.file_uploader("📂 Choose a CSV file", type="csv")
+
+# File uploader now accepts CSV, Excel, and PDF
+uploaded_file = st.file_uploader(
+    "📂 Choose a file (CSV, Excel, or PDF)",
+    type=["csv", "xlsx", "pdf"]
+)
 csv_text = st.text_area("📋 Or paste CSV data here (with headers):", height=200)
 
 df = None
+
 if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-elif csv_text.strip():
+    file_type = uploaded_file.name.split('.')[-1].lower()
     try:
-        from io import StringIO
+        if file_type == "csv":
+            df = pd.read_csv(uploaded_file)
+        elif file_type == "xlsx":
+            df = pd.read_excel(uploaded_file, engine="openpyxl")
+        elif file_type == "pdf":
+            # Attempt to extract tables from PDF using tabula-py or pdfplumber
+            # For simplicity, we'll try to read with pd.read_html (if PDF contains HTML tables)
+            # Fallback: show error and ask to upload CSV/Excel
+            try:
+                # Try using tabula-py (requires java, not ideal on Streamlit Cloud)
+                # Instead, tell user to convert manually
+                st.error("PDF parsing requires manual conversion. Please upload CSV or Excel, or paste CSV data.")
+                st.stop()
+            except:
+                st.error("PDF is not directly supported. Please upload a CSV or Excel file, or paste data as CSV.")
+                st.stop()
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        st.stop()
+elif csv_text.strip():
+    from io import StringIO
+    try:
         df = pd.read_csv(StringIO(csv_text))
     except Exception as e:
         st.error(f"Error parsing pasted CSV: {e}")
-
-if df is not None:
+        st.stop()
     # Rename columns if needed (try to find matching names)
     # Expect 'Date', 'Open', 'High', 'Low', 'Close', 'Volume'
     # If not found, show error.
