@@ -191,7 +191,7 @@ def compute_indicators(df):
     indicators['Ultimate_Osc'] = ultimate_oscillator(high, low, close)
     indicators['WillR_14'] = williams_r(high, low, close, 14)
     indicators['CCI_20'] = cci(high, low, close, 20)
-    indicators['Fisher'] = fisher_transform(high, low, 10)
+    indicators['Fisher'] = fisher_transform(high, low, close, 10)
     cmo_num = (close.diff().clip(lower=0).rolling(14).sum() - (-close.diff().clip(upper=0)).rolling(14).sum())
     cmo_den = close.diff().abs().rolling(14).sum()
     indicators['CMO'] = cmo_num / cmo_den * 100
@@ -370,7 +370,7 @@ def ultimate_oscillator(high, low, close, p1=7, p2=14, p3=28):
     avg3 = bp.rolling(p3).sum() / tr.rolling(p3).sum()
     return (4*avg1 + 2*avg2 + avg3) / 7 * 100
 
-def fisher_transform(high, low, length):
+def fisher_transform(high, low, close, length):
     hhv = high.rolling(length).max()
     llv = low.rolling(length).min()
     val = 0.33 * 2 * ((close - llv) / (hhv - llv) - 0.5) + 0.67 * close.shift()
@@ -458,4 +458,5 @@ def kalman_filter(close):
 def mcginley_dynamic(close, length):
     mg = close.copy()
     for i in range(1, len(close)):
-        mg.iloc[i] = mg.iloc[i-1] + (close.iloc[i] - mg.iloc[i-1]) / (length * (close.iloc[i
+        # Fixed: close.iloc[i] / mg.iloc[i-1] raised to power 4
+        ratio 
