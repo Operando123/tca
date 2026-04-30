@@ -36,11 +36,16 @@ def load_data(uploaded_file):
 # ------------------------------------------------------------------
 # Custom indicator implementations (pure pandas)
 # ------------------------------------------------------------------
-def sma(series, length): return series.rolling(window=length, min_periods=length).mean()
-def ema(series, length): return series.ewm(span=length, adjust=False).mean()
+def sma(series, length): 
+    return series.rolling(window=length, min_periods=length).mean()
+
+def ema(series, length): 
+    return series.ewm(span=length, adjust=False).mean()
+
 def wma(series, length): 
     weights = np.arange(1, length+1)
     return series.rolling(length).apply(lambda x: np.dot(x, weights)/weights.sum(), raw=True)
+
 def hma(series, length): 
     half_len = int(length/2)
     sqrt_len = int(np.sqrt(length))
@@ -48,12 +53,14 @@ def hma(series, length):
     wma_full = wma(series, length)
     hma_series = 2 * wma_half - wma_full
     return wma(hma_series, sqrt_len)
+
 def rsi(series, length=14):
     delta = series.diff()
     gain = delta.clip(lower=0).rolling(length).mean()
     loss = (-delta.clip(upper=0)).rolling(length).mean()
     rs = gain / loss
     return 100 - (100 / (1 + rs))
+
 def macd(series, fast=12, slow=26, signal=9):
     ema_fast = ema(series, fast)
     ema_slow = ema(series, slow)
@@ -61,24 +68,30 @@ def macd(series, fast=12, slow=26, signal=9):
     signal_line = ema(macd_line, signal)
     histogram = macd_line - signal_line
     return macd_line, signal_line, histogram
+
 def bollinger_bands(series, length=20, std=2):
     middle = sma(series, length)
     stdev = series.rolling(length).std()
     upper = middle + (stdev * std)
     lower = middle - (stdev * std)
     return upper, middle, lower
+
 def atr(high, low, close, length=14):
     tr = np.maximum(high - low, np.abs(high - close.shift()), np.abs(low - close.shift()))
     return tr.rolling(length).mean()
+
 def obv(close, volume):
     return (np.sign(close.diff()) * volume).fillna(0).cumsum()
+
 def ad(high, low, close, volume):
     mfm = ((close - low) - (high - close)) / (high - low).replace(0, np.nan)
     return (mfm * volume).fillna(0).cumsum()
+
 def cmf(high, low, close, volume, length=20):
     mfm = ((close - low) - (high - close)) / (high - low).replace(0, np.nan)
     mfv = mfm * volume
     return mfv.rolling(length).sum() / volume.rolling(length).sum()
+
 def mfi(high, low, close, volume, length=14):
     typical = (high + low + close) / 3
     money_flow = typical * volume
@@ -86,30 +99,34 @@ def mfi(high, low, close, volume, length=14):
     negative = money_flow.where(typical < typical.shift(), 0).rolling(length).sum()
     mfi = 100 - (100 / (1 + positive / negative))
     return mfi
+
 def stochastic(high, low, close, k_period=14, d_period=3):
     lowest_low = low.rolling(k_period).min()
     highest_high = high.rolling(k_period).max()
     stoch_k = 100 * (close - lowest_low) / (highest_high - lowest_low)
     stoch_d = stoch_k.rolling(d_period).mean()
     return stoch_k, stoch_d
+
 def williams_r(high, low, close, length=14):
     highest = high.rolling(length).max()
     lowest = low.rolling(length).min()
     return -100 * (highest - close) / (highest - lowest)
+
 def cci(high, low, close, length=20):
     tp = (high + low + close) / 3
     sma_tp = tp.rolling(length).mean()
     mad = tp.rolling(length).apply(lambda x: np.abs(x - x.mean()).mean())
     return (tp - sma_tp) / (0.015 * mad)
+
 def adx(high, low, close, length=14):
     tr = np.maximum(high - low, np.abs(high - close.shift()), np.abs(low - close.shift()))
-    atr = tr.rolling(length).mean()
+    atr_val = tr.rolling(length).mean()
     up_move = high - high.shift()
     down_move = low.shift() - low
     plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
     minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
-    plus_di = 100 * (pd.Series(plus_dm).rolling(length).mean() / atr)
-    minus_di = 100 * (pd.Series(minus_dm).rolling(length).mean() / atr)
+    plus_di = 100 * (pd.Series(plus_dm).rolling(length).mean() / atr_val)
+    minus_di = 100 * (pd.Series(minus_dm).rolling(length).mean() / atr_val)
     dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
     return dx.rolling(length).mean()
 
@@ -132,32 +149,27 @@ def compute_indicators(df):
     indicators['EMA_26'] = ema(close, 26)
     indicators['WMA_20'] = wma(close, 20)
     indicators['HMA_20'] = hma(close, 20)
-    indicators['KAMA_20'] = close.ewm(alpha=2/21, adjust=False).mean()  # simplified KAMA
+    indicators['KAMA_20'] = close.ewm(alpha=2/21, adjust=False).mean()
     indicators['DEMA_20'] = 2 * ema(close, 20) - ema(ema(close, 20), 20)
     indicators['TEMA_20'] = 3 * ema(close, 20) - 3 * ema(ema(close, 20), 20) + ema(ema(ema(close, 20), 20), 20)
-    # Ichimoku (simplified)
     indicators['Ichimoku_A'] = (high.rolling(9).max() + low.rolling(9).min()) / 2
     indicators['Ichimoku_B'] = (high.rolling(26).max() + low.rolling(26).min()) / 2
-    # Parabolic SAR
-    indicators['PSAR'] = ta_psar(high, low, close)   # custom function below
-    # SuperTrend
+    indicators['PSAR'] = ta_psar(high, low, close)
     supertrend = supertrend_custom(high, low, close, 10, 3)
     indicators['SuperTrend'] = supertrend
-    # Aroon
-    aroon_up = 100 * (close.rolling(25).apply(lambda x: x.argmax()) / 24) if len(close)>=25 else np.nan
-    aroon_down = 100 * (close.rolling(25).apply(lambda x: x.argmin()) / 24)
+    aroon_up = close.rolling(25).apply(lambda x: 100 * (np.argmax(x) / 24) if len(x) == 25 else np.nan, raw=False)
+    aroon_down = close.rolling(25).apply(lambda x: 100 * (np.argmin(x) / 24) if len(x) == 25 else np.nan, raw=False)
     indicators['Aroon_Up'] = aroon_up
     indicators['Aroon_Down'] = aroon_down
-    # Linear Regression Slope
     def slope(series):
+        if len(series) < 2:
+            return np.nan
         x = np.arange(len(series))
-        return np.polyfit(x, series, 1)[0] if len(series) >= 2 else np.nan
+        return np.polyfit(x, series, 1)[0]
     indicators['LinReg_Slope_20'] = close.rolling(20).apply(slope, raw=False)
-    # Moving Average Ribbon (SMA 10,20,50)
     indicators['MA_Ribbon_10'] = indicators['SMA_10']
     indicators['MA_Ribbon_20'] = indicators['SMA_20']
     indicators['MA_Ribbon_50'] = indicators['SMA_50']
-    # Trend Intensity Index
     indicators['TrendIntensity'] = (close / sma(close, 20) - 1) * 100
     
     # ----- Momentum (20+)
@@ -165,8 +177,8 @@ def compute_indicators(df):
     stoch_k, stoch_d = stochastic(high, low, close, 14, 3)
     indicators['Stoch_K'] = stoch_k
     indicators['Stoch_D'] = stoch_d
-    # Stochastic RSI (simplified)
-    stochrsi_k = (rsi(close, 14) - rsi(close, 14).rolling(14).min()) / (rsi(close, 14).rolling(14).max() - rsi(close, 14).rolling(14).min()) * 100
+    rsi14 = rsi(close, 14)
+    stochrsi_k = (rsi14 - rsi14.rolling(14).min()) / (rsi14.rolling(14).max() - rsi14.rolling(14).min()) * 100
     indicators['StochRSI_K'] = stochrsi_k
     indicators['StochRSI_D'] = stochrsi_k.rolling(3).mean()
     macd_line, macd_signal, macd_hist = macd(close)
@@ -175,28 +187,23 @@ def compute_indicators(df):
     indicators['MACD_hist'] = macd_hist
     indicators['ROC_10'] = close.pct_change(10) * 100
     indicators['Momentum_10'] = close - close.shift(10)
-    indicators['TSI'] = tsi_indicator(close)  # custom
-    indicators['Ultimate_Osc'] = ultimate_oscillator(high, low, close)  # custom
+    indicators['TSI'] = tsi_indicator(close)
+    indicators['Ultimate_Osc'] = ultimate_oscillator(high, low, close)
     indicators['WillR_14'] = williams_r(high, low, close, 14)
     indicators['CCI_20'] = cci(high, low, close, 20)
-    # Fisher Transform
-    fisher_val = fisher_transform(high, low, 10)
-    indicators['Fisher'] = fisher_val
-    indicators['CMO'] = (close.diff().clip(lower=0).rolling(14).sum() - (-close.diff().clip(upper=0)).rolling(14).sum()) / (close.diff().abs().rolling(14).sum()) * 100
-    # RVI (simplified)
+    indicators['Fisher'] = fisher_transform(high, low, 10)
+    cmo_num = (close.diff().clip(lower=0).rolling(14).sum() - (-close.diff().clip(upper=0)).rolling(14).sum())
+    cmo_den = close.diff().abs().rolling(14).sum()
+    indicators['CMO'] = cmo_num / cmo_den * 100
     indicators['RVI'] = ((close - open_) / (high - low).replace(0, np.nan)).rolling(14).mean()
     indicators['DPO'] = close - sma(close, 20).shift(10)
-    # WaveTrend
     wt1, wt2 = wavelet_trend(close, 10, 21)
     indicators['WaveTrend_1'] = wt1
     indicators['WaveTrend_2'] = wt2
-    # QQE
     qqe, qqe_ma = qqe_custom(close, 14, 5, 4.236)
     indicators['QQE'] = qqe
     indicators['QQE_ma'] = qqe_ma
-    # TTM Squeeze
     indicators['TTM_Squeeze'] = ttm_squeeze_custom(high, low, close, 20, 2)
-    # Schaff Trend Cycle (simplified)
     indicators['STC'] = schaff_trend_cycle(close, 10, 23, 50)
     
     # ----- Volatility
@@ -205,13 +212,14 @@ def compute_indicators(df):
     indicators['BB_middle'] = middle
     indicators['BB_lower'] = lower
     indicators['ATR_14'] = atr(high, low, close, 14)
-    keltner = keltner_channels(high, low, close, 20, 2)
-    indicators['KC_upper'] = keltner[0]
-    indicators['KC_lower'] = keltner[1]
+    kc_upper, kc_lower = keltner_channels(high, low, close, 20, 2)
+    indicators['KC_upper'] = kc_upper
+    indicators['KC_lower'] = kc_lower
     indicators['Donchian_upper'] = high.rolling(20).max()
     indicators['Donchian_lower'] = low.rolling(20).min()
     indicators['StdDev_20'] = close.rolling(20).std()
-    indicators['Chaikin_Volatility'] = ((high - low).rolling(10).mean() / (high - low).rolling(10).mean().shift(10) - 1) * 100
+    chaikin_vol = ((high - low).rolling(10).mean() / (high - low).rolling(10).mean().shift(10) - 1) * 100
+    indicators['Chaikin_Volatility'] = chaikin_vol
     indicators['Volatility_Ratio'] = indicators['ATR_14'] / indicators['ATR_14'].rolling(50).mean()
     indicators['Historical_Volatility'] = close.pct_change().rolling(20).std() * np.sqrt(252)
     indicators['Ulcer_Index'] = ulcer_index(close, 14)
@@ -219,16 +227,15 @@ def compute_indicators(df):
     
     # ----- Volume
     indicators['OBV'] = obv(close, volume)
-    indicators['VWAP'] = ( (high+low+close)/3 * volume ).cumsum() / volume.cumsum()
+    indicators['VWAP'] = ((high+low+close)/3 * volume).cumsum() / volume.cumsum()
     indicators['AccumDist'] = ad(high, low, close, volume)
     indicators['CMF_20'] = cmf(high, low, close, volume, 20)
     indicators['MFI_14'] = mfi(high, low, close, volume, 14)
-    indicators['Volume_Osc'] = ((volume.rolling(10).mean() - volume.rolling(30).mean()) / volume.rolling(30).mean()) * 100
-    indicators['EaseOfMove'] = ( (high - low) / (high - low).rolling(14).mean() * volume / 1000000 )
-    # NVI/PVI simplified
+    vol_osc = ((volume.rolling(10).mean() - volume.rolling(30).mean()) / volume.rolling(30).mean()) * 100
+    indicators['Volume_Osc'] = vol_osc
+    indicators['EaseOfMove'] = ((high - low) / (high - low).rolling(14).mean() * volume / 1000000)
     indicators['NVI'] = (close.pct_change() * (volume < volume.shift())).fillna(0).cumsum()
     indicators['PVI'] = (close.pct_change() * (volume > volume.shift())).fillna(0).cumsum()
-    # VWAP Bands
     indicators['VWAP_upper'] = indicators['VWAP'] + 2 * close.rolling(20).std()
     indicators['VWAP_lower'] = indicators['VWAP'] - 2 * close.rolling(20).std()
     
@@ -255,7 +262,7 @@ def compute_indicators(df):
     indicators['FVG'] = fair_value_gap(high, low)
     indicators['Liquidity_Sweep'] = liquidity_sweep(high, low, close, 20)
     indicators['POC'] = point_of_control(high, low, close, volume, 20)
-    indicators['Anchored_VWAP'] = indicators['VWAP'] # from start
+    indicators['Anchored_VWAP'] = indicators['VWAP']
     indicators['Cumulative_Delta'] = cumulative_delta(open_, high, low, close, volume)
     indicators['Stop_Hunt'] = stop_hunt(high, low, close, 10)
     indicators['MM_BuySell'] = market_maker_model(open_, high, low, close, volume)
@@ -292,36 +299,35 @@ def compute_indicators(df):
     return indicators
 
 # ------------------------------------------------------------------
-# Custom implementation helpers (copied/adapted from previous)
+# Custom implementation helpers
 # ------------------------------------------------------------------
 def ta_psar(high, low, close, af_start=0.02, af_increment=0.02, af_max=0.2):
-    # Simpler PSAR
     psar = close.copy()
     up_trend = True
     af = af_start
-    ep = low[0] if up_trend else high[0]
-    psar[0] = low[0] if up_trend else high[0]
+    ep = low.iloc[0] if up_trend else high.iloc[0]
+    psar.iloc[0] = low.iloc[0] if up_trend else high.iloc[0]
     for i in range(1, len(close)):
-        psar[i] = psar[i-1] + af * (ep - psar[i-1])
+        psar.iloc[i] = psar.iloc[i-1] + af * (ep - psar.iloc[i-1])
         if up_trend:
-            if low[i] < psar[i]:
+            if low.iloc[i] < psar.iloc[i]:
                 up_trend = False
-                psar[i] = ep
-                ep = high[i]
+                psar.iloc[i] = ep
+                ep = high.iloc[i]
                 af = af_start
             else:
-                if high[i] > ep:
-                    ep = high[i]
+                if high.iloc[i] > ep:
+                    ep = high.iloc[i]
                     af = min(af + af_increment, af_max)
         else:
-            if high[i] > psar[i]:
+            if high.iloc[i] > psar.iloc[i]:
                 up_trend = True
-                psar[i] = ep
-                ep = low[i]
+                psar.iloc[i] = ep
+                ep = low.iloc[i]
                 af = af_start
             else:
-                if low[i] < ep:
-                    ep = low[i]
+                if low.iloc[i] < ep:
+                    ep = low.iloc[i]
                     af = min(af + af_increment, af_max)
     return psar
 
@@ -446,4 +452,10 @@ def ehlers_instantaneous_trend(close):
 def kalman_filter(close):
     kf = close.copy()
     for i in range(1, len(close)):
-        kf.iloc[i] = kf.iloc[i-1] +
+        kf.iloc[i] = kf.iloc[i-1] + 0.1 * (close.iloc[i] - kf.iloc[i-1])
+    return kf
+
+def mcginley_dynamic(close, length):
+    mg = close.copy()
+    for i in range(1, len(close)):
+        mg.iloc[i] = mg.iloc[i-1] + (close.iloc[i] - mg.iloc[i-1]) / (length * (close.iloc[i
